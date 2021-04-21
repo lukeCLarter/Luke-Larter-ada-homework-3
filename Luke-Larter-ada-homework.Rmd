@@ -1,0 +1,267 @@
+---
+title: "Luke larter homework 3"
+output: html_document
+---
+```{r}
+library(tidyverse)
+library(car)
+library(broom)
+library(ggplot2)
+library(infer)
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#Challenge 1
+
+```{r}
+f <- "https://raw.githubusercontent.com/difiore/ada-2021-datasets/main/KamilarAndCooperData.csv"
+d <- read_csv(f, col_names = TRUE)
+d <- na.omit(d)
+```
+```{r}
+mod=lm(WeaningAge_d~Brain_Size_Species_Mean, data=d)
+summary(mod)
+
+log_mod=lm(log(WeaningAge_d)~log(Brain_Size_Species_Mean), data=d)
+summary(log_mod)
+```
+
+Regular model:
+```{r}
+g <- ggplot(data = d, aes(x = Brain_Size_Species_Mean, y = WeaningAge_d))
+g <- g + geom_point()
+g <- g + geom_smooth(method = "lm", formula = y ~ x) + ggtitle("Regular model (not logged)")
+g
+```
+
+Log model:
+```{r}
+gg <- ggplot(data = d, aes(x = log(Brain_Size_Species_Mean), y = log(WeaningAge_d)))
+gg <- gg + geom_point()
+gg <- gg + geom_smooth(method = "lm", formula = y ~ x) + ggtitle("Log model")
+gg
+```
+
+The point estimate of the beta slope for the regular model is given in the model output as 2.16; this indicates that as the species mean brain size increases by 1 unit, weaning age increases by 2.16 units. 
+
+The point estimate of the beta slope for the log model is given in the model output as 0.67; this indicates that as the log of the species mean brain size increases by 1, the log of weaning age increases by 0.67.
+
+The outcome of the tests associated with rejecting the null hypothesis that beta = 0 are the p values for the betas; they are less than out alpha threshold of 0.05, thus we can reject the null hypothesis and conclude there is a meaningful relationship between the variables.
+
+
+Confidence intervals:
+```{r}
+
+CI_regular = tidy(mod, conf.int = TRUE, conf.level = 0.9)
+CI_log = tidy(log_mod, conf.int = TRUE, conf.level = 0.9)
+
+CI_regular
+CI_log
+```
+`
+PIs for regular model
+```{r}
+ci <- predict(mod,
+  newdata = data.frame(Brain_Size_Species_Mean = d$Brain_Size_Species_Mean),
+  interval = "confidence", level = 0.95
+) # for a vector of values
+ci <- data.frame(ci)
+ci <- cbind(d$Brain_Size_Species_Mean, ci)
+names(ci) <- c("weight", "c.fit", "c.lwr", "c.upr")
+
+pi <- predict(mod,
+  newdata = data.frame(Brain_Size_Species_Mean = d$Brain_Size_Species_Mean),
+  interval = "prediction", level = 0.95
+) # for a vector of values
+pi <- data.frame(pi)
+pi <- cbind(d$Brain_Size_Species_Mean, pi)
+names(pi) <- c("weight", "p.fit", "p.lwr", "p.upr")
+```
+```{r}
+g <- g + geom_line(
+  data = ci, aes(x = weight, y = c.lwr),
+  color = "blue"
+)
+g <- g + geom_line(
+  data = ci, aes(x = weight, y = c.upr),
+  color = "blue"
+)
+
+colors <- c("CI" = "blue", "PI" = "red")
+
+g <- g + geom_line(data = pi, aes(x = weight, y = p.lwr), color = "red")
+g <- g + geom_line(data = pi, aes(x = weight, y = p.upr), color = "red") 
+g = g + labs(x = "Mean Brain Size",
+         y = "Weaning Age")
+g
+```
+
+Prediction for species with brain size 750:
+
+```{r}
+new.data <- data.frame(
+  Brain_Size_Species_Mean = 750)
+predict(mod, newdata = new.data, interval = "confidence")
+
+```
+
+We shouldn't trust this results as it's out of the range of the data our model was built with.
+
+
+Which is better? In looking at the 2 original plots, we can see that the logged data represents a much more linear pattern than does the non-logged. The non-logged has stretched in the middle which have no data, whereas logging the variables causes the data to span more of the range of x values. 
+
+
+
+
+#Challenge 2
+
+```{r}
+mod2=lm(log(MeanGroupSize)~log(Body_mass_female_mean), data=d)
+summary(mod2)
+
+#beta coefficients:
+coef(mod2)
+```
+
+Get bootstrap distribution: 
+
+```{r}
+reps=1000
+boot.int=numeric(reps)
+boot.coef=numeric(reps)
+
+for (i in 1:reps){
+  boot.dat=sample_n(d, nrow(d), replace=T)
+  boot.mod=lm(log(MeanGroupSize)~log(Body_mass_female_mean), data=boot.dat)
+  boot.int[i]=coef(boot.mod)[1]
+  boot.coef[i]=coef(boot.mod)[2]
+}
+
+hist(boot.int, main="Bootstrap distribution for intercept")
+hist(boot.coef, main="Bootstrap distribution for Beta Coefficient")
+```
+```{r} 
+#set parameters:
+alpha <- 0.05
+confidence_level <- 1 - alpha
+p_lower <- alpha / 2
+p_upper <- 1 - (alpha / 2)
+degrees_of_freedom <- nrow(d) - 2
+critical_value <- qt(p_upper, df = degrees_of_freedom)
+
+SE.int=sd(boot.int) #get SE from sd of bootstrap distribution:
+SE.coef=sd(boot.coef)
+
+CI.lower.int = mean(boot.int) - SE.int * critical_value #calculate CIs:
+CI.upper.int = mean(boot.int) + SE.int * critical_value
+
+CI.lower.coef = mean(boot.coef) - SE.coef * critical_value
+CI.upper.coef = mean(boot.coef) + SE.coef * critical_value
+
+print(paste("As calculated from the bootstrap distribution, the SE for the intercept is ", SE.int, " and the SE for the beta coefficient is ", SE.coef))
+
+print(paste("As calculated from the bootstrap distribution, the CI for the intercept is ", CI.lower.int, " to ", CI.upper.int," and the CI for the beta coefficient is ", CI.lower.coef, " to ", CI.upper.int))
+```
+```{r}
+summary(mod2)
+confint(mod2)
+```
+
+My calculated values and those generated by the lm function are very close for both my SEs and CIS!
+
+
+#Challenge 3
+
+```{r}
+boot_lm=function(d, model, conf.level, reps.f){
+  text=model
+  model=lm(paste(text), data=d) #get model from string to actual model
+  true.int=coef(model)[1] #get intercept, coefficient, SEs, and CIs from model output
+  true.coef=coef(model)[2]
+  true.SE.int=coef(summary(model))[, "Std. Error"][1]
+  true.SE.coef=coef(summary(model))[, "Std. Error"][2]
+  true.CI.lower.int=confint(model)[1,1]
+  true.CI.upper.int=confint(model)[1,2]
+  true.CI.lower.coef=confint(model)[2,1]
+  true.CI.upper.coef=confint(model)[2,2]
+  
+  if (length(coef(model))==3){ #for your last model with 2 independet vars, these if statements will kick in
+    true.coef3=coef(model)[3]
+    true.SE.coef3=coef(summary(model))[, "Std. Error"][3]
+    true.CI.lower.coef3=confint(model)[3,1]
+    true.CI.upper.coef3=confint(model)[3,2]
+  }
+  
+  boot.int.f=numeric(reps.f) #empty vectors to populate
+  boot.coef.f=numeric(reps.f)
+  boot.coef.f3=numeric(reps.f)
+
+  for (i in 1:reps.f){ #loop through to get bootstrap distribution
+    boot.dat.f=sample_n(d, nrow(d), replace=T) #resample each time
+    boot.mod.f=lm(paste(text), data=boot.dat.f)
+    boot.int.f[i]=coef(boot.mod.f)[1] #get model output and populate lists
+    boot.coef.f[i]=coef(boot.mod.f)[2]
+    
+    if (length(coef(model))==3){ 
+      boot.coef.f3[i]=coef(boot.mod.f)[3]
+      }
+  }
+  
+  alpha = 1-conf.level #set parameters to calculate bootstrap stats
+  p = 1 - (alpha / 2)
+  degrees_of_freedom <- nrow(d) - 2
+  critical_value <- qt(p, df = degrees_of_freedom)
+
+  SE.int.f=sd(boot.int.f) #calculate standard errors for bootstrap results
+  SE.coef.f=sd(boot.coef.f)
+
+  CI.lower.int.f = mean(boot.int.f) - SE.int.f * critical_value #calculate CIs for bootstrap results
+  CI.upper.int.f = mean(boot.int.f) + SE.int.f * critical_value
+
+  CI.lower.coef.f = mean(boot.coef.f) - SE.coef.f * critical_value
+  CI.upper.coef.f = mean(boot.coef.f) + SE.coef.f * critical_value
+  
+  res.df=data.frame(calculated_by=c("lm", "bootstrap"), #put it all in a dataframe to be returned
+                    intercept=c(true.int, mean(boot.int.f)),
+                    coefficient=c(true.coef, mean(boot.coef.f)),
+                    SE_intercept=c(true.SE.int, SE.int.f),
+                    SE_coefficient=c(true.SE.coef, SE.coef.f),
+                    intercept_CI_lower= c(true.CI.lower.int, CI.lower.int.f),
+                    intercept_CI_upper= c(true.CI.upper.int, CI.upper.int.f),
+                    coefficient_CI_lower= c(true.CI.lower.coef, CI.lower.coef.f),
+                    coefficient_CI_upper= c(true.CI.upper.coef, CI.upper.coef.f))
+  
+   if (length(coef(model))==3){ 
+      SE.coef.f3=sd(boot.coef.f3)
+      CI.lower.coef.f3 = mean(boot.coef.f3) - SE.coef.f3 * critical_value
+      CI.upper.coef.f3 = mean(boot.coef.f3) + SE.coef.f3 * critical_value
+      c3=data.frame(coefficient3=c(true.coef3, mean(boot.coef.f3)),
+                    SE_coefficient3=c(true.SE.coef3, SE.coef.f3),
+                    coefficient_CI_lower3= c(true.CI.lower.coef3, CI.lower.coef.f3),
+                    coefficient_CI_upper3= c(true.CI.upper.coef3, CI.upper.coef.f3))
+      res.df=cbind(res.df,c3)
+      }
+  
+  return(res.df)
+  
+}
+```
+```{r}
+print(boot_lm(d,"log(MeanGroupSize)~log(Body_mass_female_mean)",0.95,1000))
+print(boot_lm(d,"log(DayLength_km) ~ log(Body_mass_female_mean)",0.95,1000))
+print(boot_lm(d,"log(DayLength_km) ~ log(Body_mass_female_mean) + log(MeanGroupSize)",0.95,1000))
+```
+
+Coefficients etc. from lm and bootstrap are pretty close for all variables!
+
+
+
+
+
+
+
+
+
